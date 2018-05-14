@@ -71,8 +71,8 @@ performedPCA%>%.$x%>%as.data.frame()%>%
 
 load.data <- performedPCA$rotation %>% as.data.frame()
 
-p3<-ggplot(load.data%>%rownames_to_column(var="Time")%>%select(c(Time,PC1,PC2,PC3))%>%melt(id=c("Time"),value.name = "Loadings"), aes(x=Time,y=Loadings))
-p3+geom_bar(stat="identity",width=1,color="black",fill="snow1")+facet_wrap(~variable,nrow=3)+theme_minimal()+theme(axis.text.x = element_blank())
+p5<-ggplot(load.data%>%rownames_to_column(var="Time")%>%select(c(Time,PC1,PC2,PC3))%>%melt(id=c("Time"),value.name = "Loadings"), aes(x=Time,y=Loadings))
+p5+geom_bar(stat="identity",width=1,color="black",fill="snow1")+facet_wrap(~variable,nrow=3)+theme_minimal()+theme(axis.text.x = element_blank())
 
 # Grafico delle prime due PC
 autoplot(performedPCA,data=processed_ext,
@@ -102,12 +102,18 @@ grand_mean<-MeanProfiles%>% gather(-(1:3),key="Time",value="Impedance")%>%.$Impe
 ResidualMatr<- MeanProfiles%>%select(-(1:3))%>%as.matrix() %>% -grand_mean-
         (matrix(rep(mean_across_time$mean,111),nrow=14)-grand_mean)-
         (t(matrix(rep(as.numeric(mean_across_treats),14),ncol=14))-grand_mean)
+
 modPCA<-prcomp(ResidualMatr,scale=F)
 
 modPCA%>%.$x%>%as.data.frame()%>%
   summarize_all(funs(var)) %>%
   gather(key = pc, value = variance) %>% 
   mutate(var_exp = variance/sum(variance))
+
+load.data <- modPCA$rotation %>% as.data.frame()
+
+p3<-ggplot(load.data%>%rownames_to_column(var="Time")%>%select(c(Time,PC1,PC2,PC3))%>%melt(id=c("Time"),value.name = "Loadings"), aes(x=Time,y=Loadings))
+p3+geom_bar(stat="identity",width=1,color="black",fill="snow1")+facet_wrap(~variable,nrow=3)+theme_minimal()+theme(axis.text.x = element_blank())
 
 autoplot(modPCA,data=processed_ext,
          colour="Inhibitor",label=T,label.label="Concentration", label.repel=T)+theme_minimal()
