@@ -1,4 +1,4 @@
-setwd("C:/Users/nb2/Desktop/Politecnico/StatApp/Progetto")
+setwd("C:/Users/nb2/Desktop/Politecnico/StatApp/AppStatProject")
 library(tidyverse)
 library(reshape2)
 library(magrittr)
