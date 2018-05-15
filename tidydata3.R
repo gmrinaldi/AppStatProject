@@ -137,13 +137,22 @@ shape_as_factor<-shape_score%>%mutate(Score_factor=round(Score)%>%as.factor())%>
     select(-Score)%>%inner_join(processed)%>%plyr::rename(c("Score_factor"="Score"))
 
 p8 <- ggplot(shape_as_factor,aes(x = Time, y=Impedance, group=interaction(Inhibitor,Concentration,Measure,treatGF)))
-p8 + geom_line(aes(color =Inhibitor),size=1)+facet_wrap(~Score)+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))+theme_minimal()
+p8 + geom_line(aes(color =Inhibitor),size=.75)+facet_wrap(~Score)+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))+theme_minimal()
 
 # Consideriamo levels e shape insieme
 joinedLevelShape<-inner_join(Levels, shape_score)
 
 p9<-ggplot(joinedLevelShape,aes(x=Level,y=Score))
 p9 + geom_point(aes(color=Inhibitor))+theme_minimal()
+
+# Fittiamo un modello lineare
+model<-lm(Score~poly(Level,2),data=joinedLevelShape)
+summary(model)
+plot(model)
+
+p10<-ggplot(joinedLevelShape,aes(x=Level,y=Score))
+p10 + geom_point(aes(color=Inhibitor))+geom_smooth(se=F,method='lm',formula=y~poly(x,2))+theme_minimal()
+
 
 
 
