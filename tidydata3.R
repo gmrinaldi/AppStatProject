@@ -28,17 +28,18 @@ processed<-inner_join(reshaped,lookUp,by="Treatment")%>%
   select(-Treatment)
 
 # Grafici!
-# Ignorate questo sotto per ora
-# processed_plot<-processed%>%group_by(Time)%>%mutate(base=Impedance[treatGF==F],baseGF=Impedance[treatGF==T & Inhibitor=="no"])%>%ungroup()
 library(wesanderson)
 library(RColorBrewer)
 
-processed_plot<-processed
+# processed_plot<-processed
+processed_plot<-processed%>%group_by(Time)%>%mutate(base=mean(Impedance[treatGF==F]),baseGF=mean(Impedance[treatGF==T & Inhibitor=="no"]))%>%ungroup()
 
-p1 <- ggplot(processed_plot,aes(x = Time, y=Impedance, group=interaction(Inhibitor,Concentration,Measure,treatGF)))
-p1 + geom_line(aes(color = Inhibitor),size=1)+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
 
-(p2 <- p1 + geom_line(aes(color=Measure),size=1) + scale_color_brewer(palette = "Accent")+
+p1 <- ggplot(processed_plot%>%filter(Inhibitor!="no"),aes(x = Time, y=Impedance, group=interaction(Inhibitor,Concentration,Measure,treatGF)))
+p1 + geom_line(aes(color = Inhibitor),size=1)+geom_line(aes(x=Time,y=baseGF),linetype="longdash",size=1.25)+geom_line(aes(x=Time,y=base),linetype="longdash",size=1.25)+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
+
+(p2 <- p1 + geom_line(aes(x=Time,y=base),size=.7,linetype="dashed",colour="lemonchiffon3")+geom_line(aes(x=Time,y=baseGF),size=.7,linetype="dashed",colour="lemonchiffon3")+
+    geom_line(aes(color=Measure),size=.85) + scale_color_manual(values=wes_palette(n=3, name="Zissou1"))+
     facet_grid(factor(Inhibitor,levels=c("A","B","A+B"))~Concentration))+theme_minimal()
 
 p3<- ggplot(filter(processed_plot,Inhibitor!="no"),aes(x = Concentration, y=Impedance))
@@ -103,6 +104,12 @@ ResidualMatr<- MeanProfiles%>%select(-(1:3))%>%as.matrix() %>% -grand_mean-
         (matrix(rep(mean_across_time$mean,111),nrow=14)-grand_mean)-
         (t(matrix(rep(as.numeric(mean_across_treats),14),ncol=14))-grand_mean)
 
+# ResidualMatr_Plot<-MeanProfiles
+# ResidualMatr_Plot[,4:114]<-ResidualMatr
+# ResidualMatr_Plot<-gather(ResidualMatr_Plot,-(1:3),key="Time",value="Impedance")
+# p6 <- ggplot(ResidualMatr_Plot,aes(x = Time, y=Impedance, group=interaction(Inhibitor,Concentration,treatGF)))
+# p6 + geom_line(aes(color = Inhibitor),size=1)+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
+
 modPCA<-prcomp(ResidualMatr,scale=F)
 
 modPCA%>%.$x%>%as.data.frame()%>%
@@ -112,15 +119,31 @@ modPCA%>%.$x%>%as.data.frame()%>%
 
 load.data <- modPCA$rotation %>% as.data.frame()
 
-p3<-ggplot(load.data%>%rownames_to_column(var="Time")%>%select(c(Time,PC1,PC2,PC3))%>%melt(id=c("Time"),value.name = "Loadings"), aes(x=Time,y=Loadings))
-p3+geom_bar(stat="identity",width=1,color="black",fill="snow1")+facet_wrap(~variable,nrow=3)+theme_minimal()+theme(axis.text.x = element_blank())
+p7<-ggplot(load.data%>%rownames_to_column(var="Time")%>%select(c(Time,PC1,PC2,PC3))%>%melt(id=c("Time"),value.name = "Loadings"), aes(x=Time,y=Loadings))
+p7+geom_bar(stat="identity",width=1,color="black",fill="snow1")+facet_wrap(~variable,nrow=3)+theme_minimal()+theme(axis.text.x = element_blank())
 
 autoplot(modPCA,data=processed_ext,
          colour="Inhibitor",label=T,label.label="Concentration", label.repel=T)+theme_minimal()
 
 # Posso tenere solo la prima componente principale ~97%
 shape_score<-processed_ext%>%mutate(Score=processed_ext%>%select(-(1:4))%>%
-                as.matrix()%>% multiply_by_matrix(modPCA$rotation[,1]))%>%select((1:4),Score)
+                as.matrix()%>% multiply_by_matrix(modPCA$rotation[,1])%>%as.vector())%>%select((1:4),Score)
 
 model<-aov(Score~Inhibitor+Concentration,data=shape_score%>%filter(Inhibitor!="no")%>%droplevels())
 anova(model)
+
+# Proviamo a visualizzare la forma
+shape_as_factor<-shape_score%>%mutate(Score_factor=round(Score)%>%as.factor())%>%
+    select(-Score)%>%inner_join(processed)%>%plyr::rename(c("Score_factor"="Score"))
+
+p8 <- ggplot(shape_as_factor,aes(x = Time, y=Impedance, group=interaction(Inhibitor,Concentration,Measure,treatGF)))
+p8 + geom_line(aes(color =Inhibitor),size=1)+facet_wrap(~Score)+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))+theme_minimal()
+
+# Consideriamo levels e shape insieme
+joinedLevelShape<-inner_join(Levels, shape_score)
+
+p9<-ggplot(joinedLevelShape,aes(x=Level,y=Score))
+p9 + geom_point(aes(color=Inhibitor))+theme_minimal()
+
+
+
