@@ -1,1 +1,0 @@
-# Ciaooooone sono Paolo
