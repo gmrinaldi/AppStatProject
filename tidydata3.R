@@ -1,4 +1,6 @@
-setwd("C:/Users/nb2/Desktop/Politecnico/StatApp/AppStatProject")
+
+
+setwd("C:/Users/utente/Desktop/Applied_statistic_progetto/AppStatProject")
 library(tidyverse)
 library(reshape2)
 library(magrittr)
@@ -11,7 +13,7 @@ colnames(mydata)[1]<-"Time"
 # "Sciolgo" il dataset, utile ad esempio per i grafici
 reshaped<-melt(mydata, id=c("Time"), variable.name="Treatment",value.name="Impedance")
 
-# Creo una "lookup table", in modo da associare nuove variabili ai vari trattamenti (GF sì/no, 
+# Creo una "lookup table", in modo da associare nuove variabili ai vari trattamenti (GF s?/no, 
 # Inibitore, Concentrazione, Numero della misura)
 treatNames<-unique(reshaped$Treatment)
 treatGF<-c(rep(TRUE,39),rep(FALSE,3))
@@ -62,7 +64,7 @@ performedPCA<-processed_ext%>%
       select(-(1:4)) %>% prcomp(scale=FALSE) 
 
 
-# Per vedere la variabilità spiegata dalle varie componenti principali
+# Per vedere la variabilit? spiegata dalle varie componenti principali
 performedPCA%>%.$x%>%as.data.frame()%>%
   summarize_all(funs(var)) %>%
     gather(key = pc, value = variance) %>% 
@@ -154,5 +156,25 @@ p10<-ggplot(joinedLevelShape,aes(x=Level,y=Score))
 p10 + geom_point(aes(color=Inhibitor))+geom_smooth(se=F,method='lm',formula=y~poly(x,2))+theme_minimal()
 
 
+
+
+
+
+#new part:
+
+#distanze sulle differenze
+diff <- mydata[1:length(mydata)-1,]-mydata[2:length(mydata),]
+diff <- select(diff,c(2:13))
+
+dist.e<-dist(diff, method='euclidean')
+dist.m<-dist(diff, method='manhattan')
+dist.c<-dist(diff, method='canberra')
+x11()
+par(mfrow=c(1,3))
+image(as.matrix(dist.e), main='metrics: Euclidean', asp=1, xlab='i', ylab='j')
+image(as.matrix(dist.m), main='metrics: Manhattan', asp=1, xlab='i', ylab='j')
+image(as.matrix(dist.c), main='metrics: Canberra', asp=1, xlab='i', ylab='j')
+
+graphics.off()
 
 
