@@ -27,6 +27,9 @@ processed<-inner_join(reshaped,lookUp,by="Treatment")%>%
   .[c("Treatment","treatGF","Inhibitor","Concentration","Measure","Time","Impedance")]%>%
   select(-Treatment)
 
+# metto il tempo nel formato giusto
+processed$Time<-floor(processed$Time)+(processed$Time-floor(processed$Time))*100/60
+
 # Grafici!
 library(wesanderson)
 library(RColorBrewer)
@@ -35,7 +38,7 @@ library(RColorBrewer)
 processed_plot<-processed%>%group_by(Time)%>%mutate(base=mean(Impedance[treatGF==F]),baseGF=mean(Impedance[treatGF==T & Inhibitor=="no"]))%>%ungroup()
 
 
-p1 <- ggplot(processed_plot%>%filter(Inhibitor!="no"),aes(x = Time, y=Impedance, group=interaction(Inhibitor,Concentration,Measure,treatGF)))
+p1 <- ggplot(processed_plot%>%filter(Inhibitor!="no"),aes(x = Time, y=Impedance, group=interaction(Inhibitor,Concentration,Measure)))
 p1 + geom_line(aes(color = Inhibitor),size=1)+geom_line(aes(x=Time,y=baseGF),linetype="longdash",size=1.25)+geom_line(aes(x=Time,y=base),linetype="longdash",size=1.25)+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
 
 (p2 <- p1 + geom_line(aes(x=Time,y=base),size=.7,linetype="dashed",colour="lemonchiffon3")+geom_line(aes(x=Time,y=baseGF),size=.7,linetype="dashed",colour="lemonchiffon3")+
@@ -151,7 +154,35 @@ summary(model)
 plot(model)
 
 p10<-ggplot(joinedLevelShape,aes(x=Level,y=Score))
-p10 + geom_point(aes(color=Inhibitor))+geom_smooth(se=F,method='lm',formula=y~poly(x,2))+theme_minimal()
+p10 + geom_point(aes(color=Inhibitor))+geom_smooth(se=T,method='lm',formula=y~poly(x,2))+theme_minimal()
+
+
+# Prova di LME
+library(lme4)
+processed_lme<-processed%>%group_by(Time)%>%
+                            mutate(Sample=1:42)%>%ungroup()
+
+basemodel<-lmer(Impedance~1+Time+(1+Time|Sample),data=processed_lme,REML=F)
+interceptmodel<-lmer(Impedance~1+Time+interaction(Inhibitor,Concentration,treatGF)+(1+Time|Sample),data=processed_lme,REML=F)
+lineartermmodel<-lmer(Impedance~1+Time+Inhibitor:Time+(1+Time|Sample),data=processed_lme,REML=F)
+secondordermodel<-lmer(Impedance~1+poly(Time,2)+interaction(Inhibitor,Concentration,treatGF)*Time+(1+Time|Sample),data=processed_lme,REML=F)
+
+
+ggplot(processed_lme, aes(Time, Impedance, color=interaction(Inhibitor,Concentration,treatGF))) +
+   # stat_summary(fun.data=mean_se, geom="pointrange") +
+  stat_summary(aes(y=fitted(basemodel), linetype=Inhibitor),
+               fun.y=mean, geom="line")
+
+
+# Prove con la FDA
+library(fda)
+# Iniziamo fittando solo una curva (per esempio A4-1)
+example<-filter(processed,Inhibitor=="A",Concentration=="C4",Measure=="1")
+# Riscalo il tempo (~uso un'unità di misura di 10 minuti, partendo da 0)
+example$Time<-(example$Time-example$Time[1])*6
+
+smooth.monotone(example$Time,example$Impedance)
+
 
 
 
