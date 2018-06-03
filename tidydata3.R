@@ -176,14 +176,61 @@ ggplot(processed_lme, aes(Time, Impedance, color=interaction(Inhibitor,Concentra
 
 # Prove con la FDA
 library(fda)
-# Iniziamo fittando solo una curva (per esempio A4-1)
-example<-filter(processed,Inhibitor=="A",Concentration=="C4",Measure=="1")
-# Riscalo il tempo (~uso un'unità di misura di 10 minuti, partendo da 0)
-example$Time<-(example$Time-example$Time[1])*6
-
-smooth.monotone(example$Time,example$Impedance)
 
 
+mytimes<-processed$Time%>%unique()
+mytimes<-mytimes-mytimes[1]
+imped_basis<-create.bspline.basis(range(mytimes),114,5,mytimes)
+imped_par<-fdPar(imped_basis,3,1e-5)
+imped_data<-processed$Impedance%>%matrix(nrow=111)
 
+result<-smooth.monotone(mytimes,imped_data,imped_par)
+
+Wfd<-result$Wfdobj
+beta<-result$beta
+
+imped_hat<-t(beta[1,]+beta[2,]*t(eval.monfd(mytimes,Wfd)))
+Dimped_hat<-t(beta[2,]*t(eval.monfd(mytimes,Wfd,1)))
+D2imped_hat<-t(beta[2]*t(eval.monfd(mytimes,Wfd,2)))
+
+plotfit.fd(imped_data,mytimes,result$yhatfd,residual=T)
+
+smoothed_processed<-processed%>%mutate(Smoothed=imped_hat%>%as.vector(),FirstDerivative=Dimped_hat%>%as.vector(), SecondDerivative=D2imped_hat%>%as.vector())
+smoothed_processed$Time<-(smoothed_processed$Time-smoothed_processed$Time[1])*6
+p11 <- ggplot(smoothed_processed,aes(x = Time, y=Impedance))
+p11 + geom_point(size=.75)+geom_line(aes(x=Time,y=Smoothed,color=Inhibitor,group=interaction(treatGF,Inhibitor,Concentration,Measure)))+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
+
+p12 <- ggplot(smoothed_processed,aes(x = Time, y = FirstDerivative))
+p12 + geom_line(aes(x=Time,y=log10(FirstDerivative),color=Inhibitor,group=interaction(treatGF,Inhibitor,Concentration,Measure)))+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
+
+p13 <- ggplot(smoothed_processed,aes(x = Time, y = SecondDerivative))
+p13 + geom_line(aes(x=Time,y=SecondDerivative,color=Inhibitor,group=interaction(treatGF,Inhibitor,Concentration,Measure)))+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
+
+
+
+# # Scegliamo lambda (più o meno)
+# loglam<-seq(-6,1,.25)
+# nlam<- length(loglam)
+# dfsave<-rep(NA,nlam)
+# gcvsave<-rep(NA,nlam)
+# 
+# for (ilam in 1:nlam) {
+#   cat(paste('log10 lambda =', loglam[ilam],'\n'))
+#   lambda <- 10^loglam[ilam]
+#   fdParobj <- fdPar(imped_basis,3,lambda)
+#   smoothlist<-smooth.basis(mytimes,imped_data,fdParobj)
+#   dfsave[ilam]<-smoothlist$df
+#   gcvsave[ilam]<-sum(smoothlist$gcv)
+# 
+# }
+# plot(loglam,gcvsave)
+
+# Functional pca
+Dimped.pca<-pca.fd(result$yhatfd,2)
+Dimped.pca$varprop
+plot(Dimped.pca)
+
+# Dimped.rot.pca<-varmx.pca.fd(Dimped.pca)
+# plot(Dimped.rot.pca)
 
 
