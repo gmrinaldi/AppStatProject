@@ -193,7 +193,7 @@ imped_hat<-t(beta[1,]+beta[2,]*t(eval.monfd(mytimes,Wfd)))
 Dimped_hat<-t(beta[2,]*t(eval.monfd(mytimes,Wfd,1)))
 D2imped_hat<-t(beta[2]*t(eval.monfd(mytimes,Wfd,2)))
 
-plotfit.fd(imped_data,mytimes,result$yhatfd,residual=T)
+# plotfit.fd(imped_data,mytimes,result$yhatfd,residual=T)
 
 smoothed_processed<-processed%>%mutate(Smoothed=imped_hat%>%as.vector(),FirstDerivative=Dimped_hat%>%as.vector(), SecondDerivative=D2imped_hat%>%as.vector())
 smoothed_processed$Time<-(smoothed_processed$Time-smoothed_processed$Time[1])*6
@@ -205,8 +205,6 @@ p12 + geom_line(aes(x=Time,y=log10(FirstDerivative),color=Inhibitor,group=intera
 
 p13 <- ggplot(smoothed_processed,aes(x = Time, y = SecondDerivative))
 p13 + geom_line(aes(x=Time,y=SecondDerivative,color=Inhibitor,group=interaction(treatGF,Inhibitor,Concentration,Measure)))+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
-
-
 
 # # Scegliamo lambda (più o meno)
 # loglam<-seq(-6,1,.25)
@@ -230,7 +228,16 @@ Dimped.pca<-pca.fd(result$yhatfd,2)
 Dimped.pca$varprop
 plot(Dimped.pca)
 
+Dimped.pca<-pca.fd(result$Wfdobj,4)
+Dimped.pca$varprop
+plot(Dimped.pca)
+
 # Dimped.rot.pca<-varmx.pca.fd(Dimped.pca)
 # plot(Dimped.rot.pca)
+
+# Proviamo a eliminare la parte lineare?
+
+
+
 
 
