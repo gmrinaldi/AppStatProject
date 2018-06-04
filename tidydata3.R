@@ -179,7 +179,7 @@ library(fda)
 
 
 mytimes<-processed$Time%>%unique()
-mytimes<-mytimes-mytimes[1]
+mytimes<-(mytimes-mytimes[1])*6
 imped_basis<-create.bspline.basis(range(mytimes),114,5,mytimes)
 imped_par<-fdPar(imped_basis,3,1e-5)
 imped_data<-processed$Impedance%>%matrix(nrow=111)
@@ -237,6 +237,13 @@ plot(Dimped.pca)
 
 # Proviamo a eliminare la parte lineare?
 
+# Clustering
+library(fdakma)
+kma_result<-kma(x=mytimes,y0=t(imped_hat),y1=t(Dimped_hat),n.clust=1)
+kma.show.results(kma_result)
+#meglio
+library(funHDDC)
+clust_result<-funHDDC(result$yhatfd,4)
 
 
 
