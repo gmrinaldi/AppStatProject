@@ -193,7 +193,7 @@ imped_hat<-t(beta[1,]+beta[2,]*t(eval.monfd(mytimes,Wfd)))
 Dimped_hat<-t(beta[2,]*t(eval.monfd(mytimes,Wfd,1)))
 D2imped_hat<-t(beta[2]*t(eval.monfd(mytimes,Wfd,2)))
 
-# plotfit.fd(imped_data,mytimes,result$yhatfd,residual=T)
+# plotfit.fd(imped_data,mytimes,result$yhatfd,residual=F)
 
 smoothed_processed<-processed%>%mutate(Smoothed=imped_hat%>%as.vector(),FirstDerivative=Dimped_hat%>%as.vector(), SecondDerivative=D2imped_hat%>%as.vector())
 smoothed_processed$Time<-(smoothed_processed$Time-smoothed_processed$Time[1])*6
@@ -224,13 +224,57 @@ p13 + geom_line(aes(x=Time,y=SecondDerivative,color=Inhibitor,group=interaction(
 # plot(loglam,gcvsave)
 
 # Functional pca
-Dimped.pca<-pca.fd(result$yhatfd,2)
-Dimped.pca$varprop
-plot(Dimped.pca)
+imped.pca<-pca.fd(result$yhatfd,2)
+imped.pca$varprop
+plot(imped.pca)
 
 Dimped.pca<-pca.fd(result$Wfdobj,4)
 Dimped.pca$varprop
 plot(Dimped.pca)
+
+# Hierarchical model
+require(lme4)
+require(lattice)
+scores.pca1<-imped.pca$scores[,1]
+
+processed_lme<-processed_ext%>%select((1:4))%>%arrange(desc(treatGF),desc(Inhibitor))
+processed_lme[5:42,]<-arrange(processed_lme[5:42,],Inhibitor,desc(Concentration))
+processed_lme[16:39,]<-arrange(processed_lme[16:39,],desc(Inhibitor))
+processed_lme<-processed_lme%>%mutate(Scores=scores.pca1)
+processed_lme$Concentration<-plyr::revalue(processed_lme$Concentration, c(C0="0",C006="0.06",C025="0.25",C1="1",C4="4"))%>%as.character()%>%as.numeric()
+processed_lme$Concentration<-log(processed_lme$Concentration)
+
+basemodel<-lmer(Scores~1+Concentration+(1+Concentration|Inhibitor),data=processed_lme%>%filter(Inhibitor!="no"),REML=F)
+
+ggplot(processed_lme%>%filter(Inhibitor!="no"), aes(Concentration, Scores, color=Inhibitor)) +
+  stat_summary(aes(y=fitted(basemodel)),
+               fun.y=mean, geom="line")+geom_point(aes(x=Concentration,y=Scores))+theme_minimal()
+
+
+plot(basemodel)
+plot(basemodel, type = c("p", "smooth"))
+plot(basemodel, sqrt(abs(resid(.))) ~ fitted(.), type = c("p", "smooth"))
+qqmath(basemodel,id=.05)
+
+iqrvec<-sapply(simulate(basemodel,1000),IQR)
+obsval<-IQR(processed_lme$Scores)
+post.pred.p<-mean(obsval>=c(obsval,iqrvec))
+
+newdata<-processed_lme%>%select(c(Concentration,Inhibitor))%>%.[1,]
+newdata$Concentration<-log(2)
+newdata$Inhibitor<-"A"
+
+predicted_values<-predict(basemodel,newdata)
+mean_curve<-mean(result$yhatfd)
+estimated_curve<-imped.pca$harmonics[1]*predicted_values+mean_curve
+plot(estimated_curve)
+
+sample_downscaled<-processed%>%filter(Measure==1,Inhibitor=="A",Concentration %in% c("C1","C4"))%>%select(-c(treatGF,Measure))%>%
+                  add_row(Inhibitor=rep("A",111), Concentration=rep("C2",111), Time=processed$Time%>%unique(),Impedance=eval.fd(mytimes,estimated_curve)%>%as.vector())%>%
+                  droplevels()
+sample_downscaled$Concentration<-factor(sample_downscaled$Concentration,c("C1","C2","C4"))
+ggplot(sample_downscaled,aes(x=Time,y=Impedance,color=Concentration))+geom_line()
+
 
 # Dimped.rot.pca<-varmx.pca.fd(Dimped.pca)
 # plot(Dimped.rot.pca)
@@ -241,9 +285,14 @@ plot(Dimped.pca)
 library(fdakma)
 kma_result<-kma(x=mytimes,y0=t(imped_hat),y1=t(Dimped_hat),n.clust=1)
 kma.show.results(kma_result)
+
+kma_result_der<-kma(x=mytimes,y0=t(log(Dimped_hat)),y1=t(D2imped_hat/Dimped_hat),n.clust=2)
+kma.show.results(kma_result_der)
+
 #meglio
 library(funHDDC)
-clust_result<-funHDDC(result$yhatfd,4)
+clust_result<-funHDDC(result$yhatfd,1:8)
+plot(result$yhatfd,col=clust_result$class)
 
 
 
