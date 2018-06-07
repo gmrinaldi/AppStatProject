@@ -260,21 +260,25 @@ iqrvec<-sapply(simulate(basemodel,1000),IQR)
 obsval<-IQR(processed_lme$Scores)
 post.pred.p<-mean(obsval>=c(obsval,iqrvec))
 
-newdata<-processed_lme%>%select(c(Concentration,Inhibitor))%>%.[1,]
-newdata$Concentration<-log(2)
-newdata$Inhibitor<-"A"
-
-predicted_values<-predict(basemodel,newdata)
+# newdata<-processed_lme%>%select(c(Concentration,Inhibitor))%>%.[1,]
+# newdata$Concentration<-log(2)
+# newdata$Inhibitor<-"A"
+# 
+# predicted_values<-predict(basemodel,newdata)
 mean_curve<-mean(result$yhatfd)
-estimated_curve<-imped.pca$harmonics[1]*predicted_values+mean_curve
-plot(estimated_curve)
+# estimated_curve<-imped.pca$harmonics[1]*predicted_values+mean_curve
+# plot(estimated_curve)
+# 
+# sample_downscaled<-processed%>%filter(Measure==1,Inhibitor=="A",Concentration %in% c("C1","C4"))%>%select(-c(treatGF,Measure))%>%
+#                   add_row(Inhibitor=rep("A",111), Concentration=rep("C2",111), Time=processed$Time%>%unique(),Impedance=eval.fd(mytimes,estimated_curve)%>%as.vector())%>%
+#                   droplevels()
+# sample_downscaled$Concentration<-factor(sample_downscaled$Concentration,c("C1","C2","C4"))
+# ggplot(sample_downscaled,aes(x=Time,y=Impedance,color=Concentration))+geom_line()
 
-sample_downscaled<-processed%>%filter(Measure==1,Inhibitor=="A",Concentration %in% c("C1","C4"))%>%select(-c(treatGF,Measure))%>%
-                  add_row(Inhibitor=rep("A",111), Concentration=rep("C2",111), Time=processed$Time%>%unique(),Impedance=eval.fd(mytimes,estimated_curve)%>%as.vector())%>%
-                  droplevels()
-sample_downscaled$Concentration<-factor(sample_downscaled$Concentration,c("C1","C2","C4"))
-ggplot(sample_downscaled,aes(x=Time,y=Impedance,color=Concentration))+geom_line()
-
+load("myFunction.Rdata")
+d_p<-downscale_processed(processed,"A+B",c(.125,.5,2),basemodel,mean_curve,imped.pca)
+ggplot(d_p,aes(x=Time,y=Impedance,color=Concentration%>%as.factor(),group=Concentration))+geom_line()
+ 
 
 # Dimped.rot.pca<-varmx.pca.fd(Dimped.pca)
 # plot(Dimped.rot.pca)
