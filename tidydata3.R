@@ -262,9 +262,9 @@ post.pred.p<-mean(obsval>=c(obsval,iqrvec))
 
 lme_var<-processed_lme%>%group_by(Inhibitor,Concentration)%>%summarise(var=sd(Scores)^2)
 lme_var<-inner_join(lme_var,processed_lme)
-weightedmodel<-lmer(Scores~1+Concentration+(1+Concentration|Inhibitor),weights=1/var,data=lme_var,REML=F)
+weightedmodel<-lmer(Scores~1+Concentration+(1+Concentration|Inhibitor),weights=1/var,data=lme_var%>%filter(Inhibitor!="B"),REML=F)
 
-ggplot(lme_var, aes(Concentration, Scores, color=Inhibitor)) +
+ggplot(lme_var%>%filter(Inhibitor!="B"), aes(Concentration, Scores, color=Inhibitor)) +
   stat_summary(aes(y=fitted(weightedmodel)), fun.y=mean, geom="line")+
     geom_point(aes(x=Concentration,y=Scores))+theme_minimal()
 
@@ -293,7 +293,7 @@ mean_curve<-mean(result$yhatfd)
 # ggplot(sample_downscaled,aes(x=Time,y=Impedance,color=Concentration))+geom_line()
 
 load("myFunction.Rdata")
-d_p<-downscale_processed(processed,"A",c(.125,.5,2),basemodel,mean_curve,imped.pca)
+d_p<-downscale_processed(processed,"A",c(.125,.5,2),weightedmodel,mean_curve,imped.pca)
 ggplot(d_p,aes(x=Time,y=Impedance,color=Concentration%>%as.factor(),group=Concentration))+geom_line()
  
 
