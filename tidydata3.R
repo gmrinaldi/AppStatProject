@@ -1,6 +1,4 @@
-
-
-setwd("C:/Users/utente/Desktop/Applied_statistic_progetto/AppStatProject")
+setwd("C:/Users/nb2/Desktop/Politecnico/StatApp/AppStatProject")
 library(tidyverse)
 library(reshape2)
 library(magrittr)
@@ -29,6 +27,9 @@ processed<-inner_join(reshaped,lookUp,by="Treatment")%>%
   .[c("Treatment","treatGF","Inhibitor","Concentration","Measure","Time","Impedance")]%>%
   select(-Treatment)
 
+# metto il tempo nel formato giusto
+processed$Time<-floor(processed$Time)+(processed$Time-floor(processed$Time))*100/60
+
 # Grafici!
 library(wesanderson)
 library(RColorBrewer)
@@ -37,7 +38,7 @@ library(RColorBrewer)
 processed_plot<-processed%>%group_by(Time)%>%mutate(base=mean(Impedance[treatGF==F]),baseGF=mean(Impedance[treatGF==T & Inhibitor=="no"]))%>%ungroup()
 
 
-p1 <- ggplot(processed_plot%>%filter(Inhibitor!="no"),aes(x = Time, y=Impedance, group=interaction(Inhibitor,Concentration,Measure,treatGF)))
+p1 <- ggplot(processed_plot%>%filter(Inhibitor!="no"),aes(x = Time, y=Impedance, group=interaction(Inhibitor,Concentration,Measure)))
 p1 + geom_line(aes(color = Inhibitor),size=1)+geom_line(aes(x=Time,y=baseGF),linetype="longdash",size=1.25)+geom_line(aes(x=Time,y=base),linetype="longdash",size=1.25)+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
 
 (p2 <- p1 + geom_line(aes(x=Time,y=base),size=.7,linetype="dashed",colour="lemonchiffon3")+geom_line(aes(x=Time,y=baseGF),size=.7,linetype="dashed",colour="lemonchiffon3")+
@@ -153,28 +154,169 @@ summary(model)
 plot(model)
 
 p10<-ggplot(joinedLevelShape,aes(x=Level,y=Score))
-p10 + geom_point(aes(color=Inhibitor))+geom_smooth(se=F,method='lm',formula=y~poly(x,2))+theme_minimal()
+p10 + geom_point(aes(color=Inhibitor))+geom_smooth(se=T,method='lm',formula=y~poly(x,2))+theme_minimal()
 
 
+# Prova di LME
+library(lme4)
+processed_lme<-processed%>%group_by(Time)%>%
+                            mutate(Sample=1:42)%>%ungroup()
+
+basemodel<-lmer(Impedance~1+Time+(1+Time|Sample),data=processed_lme,REML=F)
+interceptmodel<-lmer(Impedance~1+Time+interaction(Inhibitor,Concentration,treatGF)+(1+Time|Sample),data=processed_lme,REML=F)
+lineartermmodel<-lmer(Impedance~1+Time+Inhibitor:Time+(1+Time|Sample),data=processed_lme,REML=F)
+secondordermodel<-lmer(Impedance~1+poly(Time,2)+interaction(Inhibitor,Concentration,treatGF)*Time+(1+Time|Sample),data=processed_lme,REML=F)
 
 
+ggplot(processed_lme, aes(Time, Impedance, color=interaction(Inhibitor,Concentration,treatGF))) +
+   # stat_summary(fun.data=mean_se, geom="pointrange") +
+  stat_summary(aes(y=fitted(basemodel), linetype=Inhibitor),
+               fun.y=mean, geom="line")
 
 
-#new part:
+# Prove con la FDA
+library(fda)
 
-#distanze sulle differenze
-diff <- mydata[1:length(mydata)-1,]-mydata[2:length(mydata),]
-diff <- select(diff,c(2:13))
 
-dist.e<-dist(diff, method='euclidean')
-dist.m<-dist(diff, method='manhattan')
-dist.c<-dist(diff, method='canberra')
-x11()
-par(mfrow=c(1,3))
-image(as.matrix(dist.e), main='metrics: Euclidean', asp=1, xlab='i', ylab='j')
-image(as.matrix(dist.m), main='metrics: Manhattan', asp=1, xlab='i', ylab='j')
-image(as.matrix(dist.c), main='metrics: Canberra', asp=1, xlab='i', ylab='j')
+mytimes<-processed$Time%>%unique()
+mytimes<-(mytimes-mytimes[1])*6
+imped_basis<-create.bspline.basis(range(mytimes),114,5,mytimes)
+imped_par<-fdPar(imped_basis,3,1e-5)
+imped_data<-processed$Impedance%>%matrix(nrow=111)
 
-graphics.off()
+#caricare, non calcollare
+result<-smooth.monotone(mytimes,imped_data,imped_par)
+load('risultati_lunghi')
+
+Wfd<-result$Wfdobj
+beta<-result$beta
+
+imped_hat<-t(beta[1,]+beta[2,]*t(eval.monfd(mytimes,Wfd)))
+Dimped_hat<-t(beta[2,]*t(eval.monfd(mytimes,Wfd,1)))
+D2imped_hat<-t(beta[2]*t(eval.monfd(mytimes,Wfd,2)))
+
+# plotfit.fd(imped_data,mytimes,result$yhatfd,residual=F)
+
+smoothed_processed<-processed%>%mutate(Smoothed=imped_hat%>%as.vector(),FirstDerivative=Dimped_hat%>%as.vector(), SecondDerivative=D2imped_hat%>%as.vector())
+smoothed_processed$Time<-(smoothed_processed$Time-smoothed_processed$Time[1])*6
+p11 <- ggplot(smoothed_processed,aes(x = Time, y=Impedance))
+p11 + geom_point(size=.75)+geom_line(aes(x=Time,y=Smoothed,color=Inhibitor,group=interaction(treatGF,Inhibitor,Concentration,Measure)))+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
+
+p12 <- ggplot(smoothed_processed,aes(x = Time, y = FirstDerivative))
+p12 + geom_line(aes(x=Time,y=log10(FirstDerivative),color=Inhibitor,group=interaction(treatGF,Inhibitor,Concentration,Measure)))+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
+
+p13 <- ggplot(smoothed_processed,aes(x = Time, y = SecondDerivative))
+p13 + geom_line(aes(x=Time,y=SecondDerivative,color=Inhibitor,group=interaction(treatGF,Inhibitor,Concentration,Measure)))+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
+
+# # Scegliamo lambda (pi? o meno)
+# loglam<-seq(-6,1,.25)
+# nlam<- length(loglam)
+# dfsave<-rep(NA,nlam)
+# gcvsave<-rep(NA,nlam)
+# 
+# for (ilam in 1:nlam) {
+#   cat(paste('log10 lambda =', loglam[ilam],'\n'))
+#   lambda <- 10^loglam[ilam]
+#   fdParobj <- fdPar(imped_basis,3,lambda)
+#   smoothlist<-smooth.basis(mytimes,imped_data,fdParobj)
+#   dfsave[ilam]<-smoothlist$df
+#   gcvsave[ilam]<-sum(smoothlist$gcv)
+# 
+# }
+# plot(loglam,gcvsave)
+
+# Functional pca
+imped.pca<-pca.fd(result$yhatfd,2)
+imped.pca$varprop
+plot(imped.pca)
+
+Dimped.pca<-pca.fd(result$Wfdobj,4)
+Dimped.pca$varprop
+plot(Dimped.pca)
+
+# Hierarchical model
+require(lme4)
+require(lattice)
+scores.pca1<-imped.pca$scores[,1]
+
+processed_lme<-processed_ext%>%select((1:4))%>%arrange(desc(treatGF),desc(Inhibitor))
+processed_lme[5:42,]<-arrange(processed_lme[5:42,],Inhibitor,desc(Concentration))
+processed_lme[16:39,]<-arrange(processed_lme[16:39,],desc(Inhibitor))
+processed_lme<-processed_lme%>%mutate(Scores=scores.pca1)%>%filter(Inhibitor!="no")%>%select(-treatGF)
+processed_lme$Concentration<-plyr::revalue(processed_lme$Concentration, c(C0="0",C006="0.06",C025="0.25",C1="1",C4="4"))%>%as.character()%>%as.numeric()
+processed_lme$Concentration<-log(processed_lme$Concentration)
+
+basemodel<-lmer(Scores~1+Concentration+(1+Concentration|Inhibitor),data=processed_lme,REML=F)
+
+ggplot(processed_lme, aes(Concentration, Scores, color=Inhibitor)) +
+  stat_summary(aes(y=fitted(basemodel)), fun.y=mean, geom="line")+
+    geom_point(aes(x=Concentration,y=Scores))+theme_minimal()
+
+
+plot(basemodel)
+plot(basemodel, type = c("p", "smooth"))
+plot(basemodel, sqrt(abs(resid(.))) ~ fitted(.), type = c("p", "smooth"))
+qqmath(basemodel,id=.05)
+
+iqrvec<-sapply(simulate(basemodel,1000),IQR)
+obsval<-IQR(processed_lme$Scores)
+post.pred.p<-mean(obsval>=c(obsval,iqrvec))
+
+lme_var<-processed_lme%>%group_by(Inhibitor,Concentration)%>%summarise(var=sd(Scores)^2)
+lme_var<-inner_join(lme_var,processed_lme)
+weightedmodel<-lmer(Scores~1+Concentration+(1+Concentration|Inhibitor),weights=1/var,data=lme_var%>%filter(Inhibitor!="B"),REML=F)
+
+ggplot(lme_var%>%filter(Inhibitor!="B"), aes(Concentration, Scores, color=Inhibitor)) +
+  stat_summary(aes(y=fitted(weightedmodel)), fun.y=mean, geom="line")+
+    geom_point(aes(x=Concentration,y=Scores))+theme_minimal()
+
+plot(weightedmodel)
+plot(weightedmodel, type = c("p", "smooth"))
+plot(weightedmodel, sqrt(abs(resid(.))) ~ fitted(.), type = c("p", "smooth"))
+qqmath(weightedmodel,id=.05)
+
+iqrvec<-sapply(simulate(weightedmodel,1000),IQR)
+obsval<-IQR(lme_var$Scores)
+post.pred.p<-mean(obsval>=c(obsval,iqrvec))
+
+# newdata<-processed_lme%>%select(c(Concentration,Inhibitor))%>%.[1,]
+# newdata$Concentration<-log(2)
+# newdata$Inhibitor<-"A"
+# 
+# predicted_values<-predict(basemodel,newdata)
+mean_curve<-mean(result$yhatfd)
+# estimated_curve<-imped.pca$harmonics[1]*predicted_values+mean_curve
+# plot(estimated_curve)
+# 
+# sample_downscaled<-processed%>%filter(Measure==1,Inhibitor=="A",Concentration %in% c("C1","C4"))%>%select(-c(treatGF,Measure))%>%
+#                   add_row(Inhibitor=rep("A",111), Concentration=rep("C2",111), Time=processed$Time%>%unique(),Impedance=eval.fd(mytimes,estimated_curve)%>%as.vector())%>%
+#                   droplevels()
+# sample_downscaled$Concentration<-factor(sample_downscaled$Concentration,c("C1","C2","C4"))
+# ggplot(sample_downscaled,aes(x=Time,y=Impedance,color=Concentration))+geom_line()
+
+load("myFunction.Rdata")
+d_p<-downscale_processed(processed,"A",c(.125,.5,2),weightedmodel,mean_curve,imped.pca)
+ggplot(d_p,aes(x=Time,y=Impedance,color=Concentration%>%as.factor(),group=Concentration))+geom_line()
+ 
+
+# Dimped.rot.pca<-varmx.pca.fd(Dimped.pca)
+# plot(Dimped.rot.pca)
+
+# Proviamo a eliminare la parte lineare?
+
+# Clustering
+library(fdakma)
+kma_result<-kma(x=mytimes,y0=t(imped_hat),y1=t(Dimped_hat),n.clust=1)
+kma.show.results(kma_result)
+
+kma_result_der<-kma(x=mytimes,y0=t(log(Dimped_hat)),y1=t(D2imped_hat/Dimped_hat),n.clust=2)
+kma.show.results(kma_result_der)
+
+#meglio
+library(funHDDC)
+clust_result<-funHDDC(result$yhatfd,1:8)
+plot(result$yhatfd,col=clust_result$class)
+
+
 
 
