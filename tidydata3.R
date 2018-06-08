@@ -236,11 +236,12 @@ plot(Dimped.pca)
 require(lme4)
 require(lattice)
 scores.pca1<-imped.pca$scores[,1]
+scores.pca2<-imped.pca$scores[,2]
 
 processed_lme<-processed_ext%>%select((1:4))%>%arrange(desc(treatGF),desc(Inhibitor))
 processed_lme[5:42,]<-arrange(processed_lme[5:42,],Inhibitor,desc(Concentration))
 processed_lme[16:39,]<-arrange(processed_lme[16:39,],desc(Inhibitor))
-processed_lme<-processed_lme%>%mutate(Scores=scores.pca1)%>%filter(Inhibitor!="no")%>%select(-treatGF)
+processed_lme<-processed_lme%>%mutate(Scores=scores.pca1,Scores2=scores.pca2)%>%filter(Inhibitor!="no")%>%select(-treatGF)
 processed_lme$Concentration<-plyr::revalue(processed_lme$Concentration, c(C0="0",C006="0.06",C025="0.25",C1="1",C4="4"))%>%as.character()%>%as.numeric()
 processed_lme$Concentration<-log(processed_lme$Concentration)
 
@@ -273,9 +274,35 @@ plot(weightedmodel, type = c("p", "smooth"))
 plot(weightedmodel, sqrt(abs(resid(.))) ~ fitted(.), type = c("p", "smooth"))
 qqmath(weightedmodel,id=.05)
 
-iqrvec<-sapply(simulate(weightedmodel,1000),IQR)
-obsval<-IQR(lme_var$Scores)
+iqrvec<-sapply(simulate(weightedmodel,10000),median)
+obsval<-median(lme_var$Scores)
 post.pred.p<-mean(obsval>=c(obsval,iqrvec))
+
+
+basemodel2<-lmer(Scores2~1+poly(Concentration,2)+(1+poly(Concentration,2)|Inhibitor),data=processed_lme,REML=F)
+
+ggplot(processed_lme, aes(Concentration, Scores2, color=Inhibitor)) +
+  stat_summary(aes(y=fitted(basemodel2)), fun.y=mean, geom="line")+
+  geom_point(aes(x=Concentration,y=Scores2))+theme_minimal()
+
+
+plot(basemodel2)
+plot(basemodel2, type = c("p", "smooth"))
+plot(basemodel2, sqrt(abs(resid(.))) ~ fitted(.), type = c("p", "smooth"))
+qqmath(basemodel2,id=.05)
+
+lme_var2<-processed_lme%>%group_by(Inhibitor,Concentration)%>%summarise(var=sd(Scores2)^2)
+lme_var2<-inner_join(lme_var2,processed_lme)
+weightedmodel2<-lmer(Scores2~1+poly(Concentration,2)+(1+poly(Concentration,2)|Inhibitor),weights=1/var,data=lme_var2%>%filter(Inhibitor!="B"),REML=F)
+
+ggplot(lme_var2%>%filter(Inhibitor!="B"), aes(Concentration, Scores2, color=Inhibitor)) +
+  stat_summary(aes(y=fitted(weightedmodel2)), fun.y=mean, geom="line")+
+  geom_point(aes(x=Concentration,y=Scores2))+theme_minimal()
+
+plot(weightedmodel2)
+plot(weightedmodel2, type = c("p", "smooth"))
+plot(weightedmodel2, sqrt(abs(resid(.))) ~ fitted(.), type = c("p", "smooth"))
+qqmath(weightedmodel2,id=.05)
 
 # newdata<-processed_lme%>%select(c(Concentration,Inhibitor))%>%.[1,]
 # newdata$Concentration<-log(2)
@@ -293,7 +320,7 @@ mean_curve<-mean(result$yhatfd)
 # ggplot(sample_downscaled,aes(x=Time,y=Impedance,color=Concentration))+geom_line()
 
 load("myFunction.Rdata")
-d_p<-downscale_processed(processed,"A",c(.125,.5,2),weightedmodel,mean_curve,imped.pca)
+d_p<-downscale_processed(processed,"A",c(.125,.5,2),weightedmodel,basemodel2,mean_curve,imped.pca)
 ggplot(d_p,aes(x=Time,y=Impedance,color=Concentration%>%as.factor(),group=Concentration))+geom_line()
  
 
