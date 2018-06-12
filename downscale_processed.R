@@ -2,8 +2,8 @@ downscale_processed<-function(processed,target_Inh,target_Conc,Fitted_Model,Fitt
       require(fda)
       newdata<-data.frame(log(target_Conc), rep(target_Inh,length(target_Conc))) 
       colnames(newdata)<-c("Concentration","Inhibitor")
-      predicted_values<-predict(Fitted_Model,newdata)
-      predicted_values2<-predict(Fitted_Model2,newdata)
+      predicted_values<-predict(Fitted_Model,newdata,re.form=NA)
+      predicted_values2<-predict(Fitted_Model2,newdata,re.form=NA)
       
       Mean_Profiles<- processed%>%filter(Inhibitor==target_Inh)%>%spread(key=Time,value=Impedance)%>%select(-treatGF)%>%
             group_by(Inhibitor, Concentration) %>%
