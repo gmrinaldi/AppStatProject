@@ -145,6 +145,11 @@ p8 + geom_line(aes(color =Inhibitor),size=.75)+facet_wrap(~Score)+scale_color_ma
 # Consideriamo levels e shape insieme
 joinedLevelShape<-inner_join(Levels, shape_score)
 
+# Manova
+fit<-manova(cbind(joinedLevelShape$Level,joinedLevelShape$Score)~Inhibitor*Concentration,data=joinedLevelShape)
+summary.manova(fit)
+summary.aov(fit)
+
 p9<-ggplot(joinedLevelShape,aes(x=Level,y=Score))
 p9 + geom_point(aes(color=Inhibitor))+theme_minimal()
 
@@ -201,7 +206,7 @@ p11 <- ggplot(smoothed_processed,aes(x = Time, y=Impedance))
 p11 + geom_point(size=.75)+geom_line(aes(x=Time,y=Smoothed,color=Inhibitor,group=interaction(treatGF,Inhibitor,Concentration,Measure)))+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
 
 p12 <- ggplot(smoothed_processed,aes(x = Time, y = FirstDerivative))
-p12 + geom_line(aes(x=Time,y=log10(FirstDerivative),color=Inhibitor,group=interaction(treatGF,Inhibitor,Concentration,Measure)))+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
+p12 + geom_line(aes(x=Time,y=log10(FirstDerivative),color=Inhibitor,group=interaction(treatGF,Inhibitor,Concentration,Measure)))+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))+labs(y="Log10 of First Derivative")
 
 p13 <- ggplot(smoothed_processed,aes(x = Time, y = SecondDerivative))
 p13 + geom_line(aes(x=Time,y=SecondDerivative,color=Inhibitor,group=interaction(treatGF,Inhibitor,Concentration,Measure)))+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
@@ -244,54 +249,58 @@ processed_lme[16:39,]<-arrange(processed_lme[16:39,],desc(Inhibitor))
 processed_lme<-processed_lme%>%mutate(Scores=scores.pca1,Scores2=scores.pca2)%>%filter(Inhibitor!="no")%>%select(-treatGF)
 processed_lme$Concentration<-plyr::revalue(processed_lme$Concentration, c(C0="0",C006="0.06",C025="0.25",C1="1",C4="4"))%>%as.character()%>%as.numeric()
 processed_lme$Concentration<-log(processed_lme$Concentration)
+# processed_lme<-processed_lme%>%mutate(ID=c(1,1,1,2,2,2,3,3,3,4,4,5,5,5,6,6,6,7,7,7,8,8,8,9,9,9,10,10,10,11,11,11,12,12,12))
 
-basemodel<-lmer(Scores~1+poly(Concentration,2)*Inhibitor+(1+Concentration|Measure),data=processed_lme,REML=F)
+basemodel<-lmer(Scores~1+poly(Concentration,2)*Inhibitor+(1+poly(Concentration,2)|Measure),data=processed_lme,REML=F)
 
 ggplot(processed_lme, aes(Concentration, Scores, color=Inhibitor)) +
   stat_summary(aes(y=fitted(basemodel)), fun.y=mean, geom="line")+
     geom_point(aes(x=Concentration,y=Scores))+theme_minimal()
 
-# lmodel<-lm(Scores~Concentration*Inhibitor,data=processed_lme)
-# 
-# ggplot(processed_lme, aes(Concentration, Scores, color=Inhibitor)) +
-#   stat_summary(aes(y=fitted(lmodel)), fun.y=mean, geom="line")+
-#   geom_point(aes(x=Concentration,y=Scores))+theme_minimal()
+lmodel<-lm(Scores~poly(Concentration,2)*Inhibitor,data=processed_lme)
 
+ggplot(processed_lme, aes(Concentration, Scores, color=Inhibitor)) +
+  stat_summary(aes(y=fitted(lmodel)), fun.y=mean, geom="line")+
+  geom_point(aes(x=Concentration,y=Scores))+theme_minimal()
+
+x11()
+par(mfrow=c(2,2))
+plot(lmodel)
 
 plot(basemodel)
 plot(basemodel, type = c("p", "smooth"))
 plot(basemodel, sqrt(abs(resid(.))) ~ fitted(.), type = c("p", "smooth"))
 qqmath(basemodel,id=.05)
-
+shapiro.test(residuals(basemodel))
 iqrvec<-sapply(simulate(basemodel,1000),IQR)
 obsval<-IQR(processed_lme$Scores)
 post.pred.p<-mean(obsval>=c(obsval,iqrvec))
 
-lme_var<-processed_lme%>%group_by(Inhibitor,Concentration)%>%summarise(var=sd(Scores)^2)
-lme_var<-inner_join(lme_var,processed_lme)
-weightedmodel<-lmer(Scores~1+Concentration*Inhibitor+(1+Concentration|Measure),weights=1/var,data=lme_var,REML=F)
-
-ggplot(lme_var, aes(Concentration, Scores, color=Inhibitor)) +
-  stat_summary(aes(y=fitted(weightedmodel)), fun.y=mean, geom="line")+
-    geom_point(aes(x=Concentration,y=Scores))+theme_minimal()
-
-# weightedlinearmodel<-lm(Scores~1+Concentration*Inhibitor,weights=1/var,data=lme_var)
+# lme_var<-processed_lme%>%group_by(Inhibitor,Concentration)%>%summarise(var=sd(Scores)^2)
+# lme_var<-inner_join(lme_var,processed_lme)
+# weightedmodel<-lmer(Scores~1+Concentration*Inhibitor+(1+Concentration|Measure),weights=1/var,data=lme_var,REML=F)
 # 
 # ggplot(lme_var, aes(Concentration, Scores, color=Inhibitor)) +
-#   stat_summary(aes(y=fitted(weightedlinearmodel)), fun.y=mean, geom="line")+
-#   geom_point(aes(x=Concentration,y=Scores))+theme_minimal()
+#   stat_summary(aes(y=fitted(weightedmodel)), fun.y=mean, geom="line")+
+#     geom_point(aes(x=Concentration,y=Scores))+theme_minimal()
+# 
+# # weightedlinearmodel<-lm(Scores~1+Concentration*Inhibitor,weights=1/var,data=lme_var)
+# # 
+# # ggplot(lme_var, aes(Concentration, Scores, color=Inhibitor)) +
+# #   stat_summary(aes(y=fitted(weightedlinearmodel)), fun.y=mean, geom="line")+
+# #   geom_point(aes(x=Concentration,y=Scores))+theme_minimal()
+# 
+# plot(weightedmodel)
+# plot(weightedmodel, type = c("p", "smooth"))
+# plot(weightedmodel, sqrt(abs(resid(.))) ~ fitted(.), type = c("p", "smooth"))
+# qqmath(weightedmodel,id=.05)
+# 
+# iqrvec<-sapply(simulate(weightedmodel,10000),median)
+# obsval<-median(lme_var$Scores)
+# post.pred.p<-mean(obsval>=c(obsval,iqrvec))
 
-plot(weightedmodel)
-plot(weightedmodel, type = c("p", "smooth"))
-plot(weightedmodel, sqrt(abs(resid(.))) ~ fitted(.), type = c("p", "smooth"))
-qqmath(weightedmodel,id=.05)
 
-iqrvec<-sapply(simulate(weightedmodel,10000),median)
-obsval<-median(lme_var$Scores)
-post.pred.p<-mean(obsval>=c(obsval,iqrvec))
-
-
-basemodel2<-lmer(Scores2~1+poly(Concentration,2)*Inhibitor+(1+poly(Concentration,2)|Measure),data=processed_lme,REML=F)
+basemodel2<-lmer(Scores2~1+poly(Concentration,2)*Inhibitor+(1|Measure),data=processed_lme,REML=F)
 
 ggplot(processed_lme, aes(Concentration, Scores2, color=Inhibitor)) +
   stat_summary(aes(y=fitted(basemodel2)), fun.y=mean, geom="line")+
@@ -303,38 +312,28 @@ plot(basemodel2, type = c("p", "smooth"))
 plot(basemodel2, sqrt(abs(resid(.))) ~ fitted(.), type = c("p", "smooth"))
 qqmath(basemodel2,id=.05)
 
-lme_var2<-processed_lme%>%group_by(Inhibitor,Concentration)%>%summarise(var=sd(Scores2)^2)
-lme_var2<-inner_join(lme_var2,processed_lme)
-weightedmodel2<-lmer(Scores2~1+poly(Concentration,2)+(1+poly(Concentration,2)|Inhibitor),weights=1/var,data=lme_var2%>%filter(Inhibitor!="B"),REML=F)
-
-ggplot(lme_var2%>%filter(Inhibitor!="B"), aes(Concentration, Scores2, color=Inhibitor)) +
-  stat_summary(aes(y=fitted(weightedmodel2)), fun.y=mean, geom="line")+
-  geom_point(aes(x=Concentration,y=Scores2))+theme_minimal()
-
-plot(weightedmodel2)
-plot(weightedmodel2, type = c("p", "smooth"))
-plot(weightedmodel2, sqrt(abs(resid(.))) ~ fitted(.), type = c("p", "smooth"))
-qqmath(weightedmodel2,id=.05)
-
-# newdata<-processed_lme%>%select(c(Concentration,Inhibitor))%>%.[1,]
-# newdata$Concentration<-log(2)
-# newdata$Inhibitor<-"A"
+# lme_var2<-processed_lme%>%group_by(Inhibitor,Concentration)%>%summarise(var=sd(Scores2)^2)
+# lme_var2<-inner_join(lme_var2,processed_lme)
+# weightedmodel2<-lmer(Scores2~1+poly(Concentration,2)+(1+poly(Concentration,2)|Inhibitor),weights=1/var,data=lme_var2%>%filter(Inhibitor!="B"),REML=F)
 # 
-# predicted_values<-predict(basemodel,newdata)
+# ggplot(lme_var2%>%filter(Inhibitor!="B"), aes(Concentration, Scores2, color=Inhibitor)) +
+#   stat_summary(aes(y=fitted(weightedmodel2)), fun.y=mean, geom="line")+
+#   geom_point(aes(x=Concentration,y=Scores2))+theme_minimal()
+# 
+# plot(weightedmodel2)
+# plot(weightedmodel2, type = c("p", "smooth"))
+# plot(weightedmodel2, sqrt(abs(resid(.))) ~ fitted(.), type = c("p", "smooth"))
+# qqmath(weightedmodel2,id=.05)
+
 mean_curve<-mean(result$yhatfd)
-# estimated_curve<-imped.pca$harmonics[1]*predicted_values+mean_curve
-# plot(estimated_curve)
-# 
-# sample_downscaled<-processed%>%filter(Measure==1,Inhibitor=="A",Concentration %in% c("C1","C4"))%>%select(-c(treatGF,Measure))%>%
-#                   add_row(Inhibitor=rep("A",111), Concentration=rep("C2",111), Time=processed$Time%>%unique(),Impedance=eval.fd(mytimes,estimated_curve)%>%as.vector())%>%
-#                   droplevels()
-# sample_downscaled$Concentration<-factor(sample_downscaled$Concentration,c("C1","C2","C4"))
-# ggplot(sample_downscaled,aes(x=Time,y=Impedance,color=Concentration))+geom_line()
 
 load("myFunction.Rdata")
 d_p<-downscale_processed(processed,"A",c(.125,.5,2),basemodel,basemodel2,mean_curve,imped.pca)
-ggplot(d_p,aes(x=Time,y=Impedance,color=Concentration%>%as.factor(),group=Concentration))+geom_line()
- 
+
+lookUp2<-data.frame(Concentration=c(unique(d_p$Concentration)),Estimated=c(rep("FALSE",4),rep("TRUE",3)))
+d_plot<-inner_join(d_p,lookUp2,by="Concentration")
+
+ggplot(d_plot,aes(x=Time,y=Impedance,color=Concentration%>%as.factor(),group=Concentration))+geom_line(aes(linetype=Estimated))+theme_minimal()+guides(linetype=FALSE)+scale_color_discrete(name="Concentration")
 
 # Dimped.rot.pca<-varmx.pca.fd(Dimped.pca)
 # plot(Dimped.rot.pca)
@@ -351,8 +350,276 @@ kma.show.results(kma_result_der)
 
 #meglio
 library(funHDDC)
-clust_result<-funHDDC(result$yhatfd,1:8)
+clust_result<-funHDDC(result$yhatfd,5)
 plot(result$yhatfd,col=clust_result$class)
+
+clustered_processed<-smoothed_processed%>%mutate(Cluster=rep(clust_result$class,each=111))
+p14 <- ggplot(clustered_processed%>%filter(Inhibitor=="A",Concentration=="C006"),aes(x = Time, y=Impedance))
+p14 +geom_line(aes(colour=Cluster%>%as.factor(),group=interaction(treatGF,Inhibitor,Concentration,Measure)))+theme_minimal()
+
+p15<- ggplot(processed_lme,aes(x=Scores,y=Scores2))
+p15+geom_point(aes(color=Inhibitor))
+
+# Prova di FLM
+Treatments<-processed$Inhibitor%>%unique()
+p<-length(Treatments)+1
+TreatmentsList<-vector("list",p)
+TreatmentsList[[1]]<-c(rep(1,42),0)
+for(j in 2:p) {
+  xj=processed_ext$Inhibitor==Treatments[j-1]
+  TreatmentsList[[j]]<-c(xj,1)
+}
+
+coef<-result$yhatfd$coefs
+coef43<-cbind(coef,matrix(0,114,1))
+Imped43fd<-fd(coef43,imped_basis)
+
+betabasis<-create.bspline.basis(range(mytimes),114,5,mytimes)
+betafdPar<-fdPar(betabasis)
+betaList<-vector("list",p)
+for(j in 1:p) betaList[[j]]<-betafdPar
+
+fRegressList<-fRegress(Imped43fd,TreatmentsList,betaList)
+
+betaestList<-fRegressList$betaestlist
+treatmentsFit<-fRegressList$yhatfdobj
+treatments<-c("Mean",Treatments)
+par(mfrow=c(2,3),cex=1)
+for (j in 1:p) plot(betaestList[[j]]$fd,lwd=2,main=Treatments[j])
+plot(treatmentsFit,lwd=2,col=1,lty=1)
+
+# Missing value
+load("missingA_C006.RData")
+processed_nomissing<-rbind(processed,data.frame(treatGF=T,Inhibitor="A",Concentration="C006",
+                                                Measure=3,Time=unique(processed$Time),Impedance=missingobs))
+
+processed_plot2<-processed_nomissing%>%group_by(Time)%>%mutate(base=mean(Impedance[treatGF==F]),baseGF=mean(Impedance[treatGF==T & Inhibitor=="no"]))%>%ungroup()
+
+
+p16 <- ggplot(processed_plot2%>%filter(Inhibitor!="no"),aes(x = Time, y=Impedance, group=interaction(Inhibitor,Concentration,Measure)))
+p16 + geom_line(aes(color = Inhibitor),size=1)+geom_line(aes(x=Time,y=baseGF),linetype="longdash",size=1.25)+geom_line(aes(x=Time,y=base),linetype="longdash",size=1.25)+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
+
+(p17 <- p16 + geom_line(aes(x=Time,y=base),size=.7,linetype="dashed",colour="lemonchiffon3")+geom_line(aes(x=Time,y=baseGF),size=.7,linetype="dashed",colour="lemonchiffon3")+
+    geom_line(aes(color=Measure),size=.85) + scale_color_manual(values=wes_palette(n=3, name="Zissou1"))+
+    facet_grid(factor(Inhibitor,levels=c("A","B","A+B"))~Concentration))+theme_minimal()
+
+mytimes<-processed$Time%>%unique()
+mytimes<-(mytimes-mytimes[1])*6
+imped_basis<-create.bspline.basis(range(mytimes),114,5,mytimes)
+imped_par<-fdPar(imped_basis,3,1e-5)
+imped_data<-processed_nomissing$Impedance%>%matrix(nrow=111)
+
+# result<-smooth.monotone(mytimes,imped_data,imped_par)
+load("fitted_spline.RData")
+
+Wfd<-result$Wfdobj
+beta<-result$beta
+
+imped_hat<-t(beta[1,]+beta[2,]*t(eval.monfd(mytimes,Wfd)))
+Dimped_hat<-t(beta[2,]*t(eval.monfd(mytimes,Wfd,1)))
+D2imped_hat<-t(beta[2]*t(eval.monfd(mytimes,Wfd,2)))
+
+# plotfit.fd(imped_data,mytimes,result$yhatfd,residual=F)
+
+smoothed_processed<-processed_nomissing%>%mutate(Smoothed=imped_hat%>%as.vector(),FirstDerivative=Dimped_hat%>%as.vector(), SecondDerivative=D2imped_hat%>%as.vector())
+smoothed_processed$Time<-(smoothed_processed$Time-smoothed_processed$Time[1])*6
+p18 <- ggplot(smoothed_processed,aes(x = Time, y=Impedance))
+p18 + geom_point(size=.75)+geom_line(aes(x=Time,y=Smoothed,color=Inhibitor,group=interaction(treatGF,Inhibitor,Concentration,Measure)))+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
+
+p19 <- ggplot(smoothed_processed,aes(x = Time, y = FirstDerivative))
+p19 + geom_line(aes(x=Time,y=log10(FirstDerivative),color=Inhibitor,group=interaction(treatGF,Inhibitor,Concentration,Measure)))+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))+labs(y="Log10 of First Derivative")
+
+p20 <- ggplot(smoothed_processed,aes(x = Time, y = SecondDerivative))
+p20 + geom_line(aes(x=Time,y=SecondDerivative,color=Inhibitor,group=interaction(treatGF,Inhibitor,Concentration,Measure)))+theme_minimal()+scale_color_manual(values=wes_palette(n=4, name="Darjeeling1"))
+
+imped.pca<-pca.fd(result$yhatfd,2)
+imped.pca$varprop
+plot(imped.pca)
+plotscores(imped.pca)
+
+Dimped.pca<-pca.fd(result$Wfdobj,4)
+Dimped.pca$varprop
+plot(Dimped.pca)
+
+
+
+# Hierarchical model
+scores.pca1<-imped.pca$scores[,1]
+scores.pca2<-imped.pca$scores[,2]
+
+processed_lme<-processed_nomissing%>%spread(key=Time,value=Impedance)%>%select((1:4))%>%arrange(desc(treatGF),desc(Inhibitor))
+processed_lme[5:43,]<-arrange(processed_lme[5:43,],Inhibitor,desc(Concentration))
+processed_lme[17:40,]<-arrange(processed_lme[17:40,],desc(Inhibitor))
+processed_lme<-processed_lme%>%mutate(Scores=scores.pca1,Scores2=scores.pca2)%>%filter(Inhibitor!="no")%>%select(-treatGF)
+processed_lme$Concentration<-plyr::revalue(processed_lme$Concentration, c(C0="0",C006="0.06",C025="0.25",C1="1",C4="4"))%>%as.character()%>%as.numeric()
+processed_lme$Concentration<-log(processed_lme$Concentration)
+# processed_lme<-processed_lme%>%mutate(ID=c(1,1,1,2,2,2,3,3,3,4,4,5,5,5,6,6,6,7,7,7,8,8,8,9,9,9,10,10,10,11,11,11,12,12,12))
+
+basemodel<-lmer(Scores~1+poly(Concentration,2)*Inhibitor+(1+poly(Concentration,2)|Measure),data=processed_lme,REML=F)
+
+ggplot(processed_lme, aes(Concentration, Scores, color=Inhibitor)) +
+  stat_summary(aes(y=fitted(basemodel)), fun.y=mean, geom="line")+
+  geom_point(aes(x=Concentration,y=Scores))+theme_minimal()
+
+
+plot(basemodel)
+plot(basemodel, type = c("p", "smooth"))
+plot(basemodel, sqrt(abs(resid(.))) ~ fitted(.), type = c("p", "smooth"))
+qqmath(basemodel,id=.05)
+
+basemodel2<-lmer(Scores2~1+poly(Concentration,2)*Inhibitor+(1|Measure),data=processed_lme,REML=F)
+
+ggplot(processed_lme, aes(Concentration, Scores2, color=Inhibitor)) +
+  stat_summary(aes(y=fitted(basemodel2)), fun.y=mean, geom="line")+
+  geom_point(aes(x=Concentration,y=Scores2))+theme_minimal()
+
+
+plot(basemodel2)
+plot(basemodel2, type = c("p", "smooth"))
+plot(basemodel2, sqrt(abs(resid(.))) ~ fitted(.), type = c("p", "smooth"))
+qqmath(basemodel2,id=.05)
+
+mean_curve<-mean(result$yhatfd)
+
+load("myFunction.Rdata")
+d_p<-downscale_processed(processed_nomissing,"A",c(.125,.5,2),basemodel,basemodel2,mean_curve,imped.pca)
+
+lookUp2<-data.frame(Concentration=c(unique(d_p$Concentration)),Estimated=c(rep("FALSE",4),rep("TRUE",3)))
+d_plot<-inner_join(d_p,lookUp2,by="Concentration")
+
+ggplot(d_plot,aes(x=Time,y=Impedance,color=Concentration%>%as.factor(),group=Concentration))+geom_line(aes(linetype=Estimated))+theme_minimal()+guides(linetype=FALSE)+scale_color_discrete(name="Concentration")
+
+# Prova di FLM
+levels(processed_nomissing$Inhibitor)<-c(levels(processed_nomissing$Inhibitor),"untreated")
+processed_nomissing[processed_nomissing$treatGF==F,]$Inhibitor<-"untreated"
+
+Treatments<-processed_nomissing$Inhibitor%>%unique()
+p<-length(Treatments)+1
+TreatmentsList<-vector("list",p)
+TreatmentsList[[1]]<-c(rep(1,43),0)
+Tnames<-c(rep("no",4),rep("A",12),rep("B",12),rep("A+B",12),rep("untreated",3))
+
+for(j in 2:p) {
+  xj=Tnames==Treatments[j-1]
+  TreatmentsList[[j]]<-c(xj,1)
+}
+
+coef<-result$yhatfd$coefs
+coef44<-cbind(coef,matrix(0,114,1))
+Imped44fd<-fd(coef44,imped_basis)
+
+betabasis<-create.bspline.basis(range(mytimes),114,5,mytimes)
+betafdPar<-fdPar(betabasis)
+betaList<-vector("list",p)
+for(j in 1:p) {betaList[[j]]<-betafdPar
+  betaList[[j]]$lambda<-10}
+
+
+fRegressList<-fRegress(Imped44fd,TreatmentsList,betaList)
+
+betaestList<-fRegressList$betaestlist
+treatmentsFit<-fRegressList$yhatfdobj
+treatments<-c("Mean",Treatments)
+par(mfrow=c(2,3),cex=1)
+for (j in 1:p) plot(betaestList[[j]]$fd,lwd=2,main=treatments[j])
+plot(treatmentsFit,lwd=2,col=1,lty=1)
+plot(betaestList[[1]])
+plot(betaestList[[1]]$fd+betaestList[[2]]$fd)
+plot(betaestList[[1]]$fd+betaestList[[3]]$fd)
+plot(betaestList[[1]]$fd+betaestList[[4]]$fd)
+plot(betaestList[[1]]$fd+betaestList[[5]]$fd)
+plot(betaestList[[1]]$fd+betaestList[[6]]$fd)
+
+
+yhatmat  <- predict(fRegressList$yhatfdobj,mytimes)
+ymat     <- eval.fd(mytimes,Imped44fd)
+temprmat <- ymat[,1:43] - yhatmat[,1:43]
+SigmaE <- var(t(temprmat))
+
+par(mfrow=c(1,1))
+contour(SigmaE, xlab="Day", ylab="Day")
+lines(c(0, 365), c(0, 365),lty=4)
+
+par(mfrow=c(1,1), mar=c(5,5,3,2), pty="m")
+stddevE <- sqrt(diag(SigmaE))
+plot(mytimes, stddevE, type="l",
+     xlab="Day", ylab="Standard error (deg C)")
+
+#  Repeat regression, this time outputting results for
+#  confidence intervals
+imped_basis_mat<-eval.basis(mytimes,imped_basis)
+y2cMap <- solve(tcrossprod(imped_basis_mat, imped_basis_mat))
+
+stderrList <- fRegress.stderr(fRegressList, y2cMap, SigmaE)
+
+betastderrlist <- stderrList$betastderrlist
+
+#  plot regression function standard errors
+
+op <- par(mfrow=c(2,3), pty="s")
+for (j in 1:p) {
+  betastderrj <- eval.fd(day.5, betastderrlist[[j]])
+  plot(day.5, betastderrj,
+       type="l",lty=1, xlab="Day", ylab="Reg. Coeff.",
+       main=zonenames[j])
+}
+par(op)
+
+#  plot regression functions with confidence limits
+
+op <- par(mfrow=c(3,2))
+for (j in 1:p) {
+  betafdParj  <- betaestlist[[j]]
+  betafdj     <- betafdParj$fd
+  betaj       <- eval.fd(day.5, betafdj)
+  betastderrj <- eval.fd(day.5, betastderrlist[[j]])
+  matplot(day.5, cbind(betaj, betaj+2*betastderrj, betaj-2*betastderrj),
+          type="l",lty=c(1,4,4), xlab="Day", ylab="Reg. Coeff.",
+          main=zonenames[j])
+}
+par(op)
+
+
+# Proviamo a normalizzare
+processed_norm<-processed_nomissing%>%group_by(Time)%>%mutate(base=mean(Impedance[treatGF==F]),baseGF=mean(Impedance[treatGF==T & Inhibitor=="no"]))%>%
+  mutate(normalized=(Impedance-base)/(baseGF-base))%>%ungroup()%>%filter(Inhibitor!="no")
+
+imped_data_norm<-processed_norm$normalized%>%matrix(nrow=111)
+
+imped_par_norm<-fdPar(imped_basis,3,10^-1.5)
+result_norm<-smooth.basis(mytimes,imped_data_norm,imped_par_norm)
+
+Treatments<-processed_norm$Inhibitor%>%unique()
+p<-length(Treatments)+1
+TreatmentsList<-vector("list",p)
+TreatmentsList[[1]]<-c(rep(1,36),0)
+for(j in 2:p) {
+  xj=processed_norm%>%select(-base,-baseGF,-Impedance)%>%spread(key=Time,value=normalized)%>%.$Inhibitor==Treatments[j-1]
+  TreatmentsList[[j]]<-c(xj,1)
+}
+
+coef<-result_norm$fd$coefs
+coef44<-cbind(coef,matrix(0,114,1))
+Imped44fd<-fd(coef44,imped_basis)
+
+betabasis<-create.bspline.basis(range(mytimes),114,5,mytimes)
+betafdPar<-fdPar(betabasis)
+betaList<-vector("list",p)
+for(j in 1:p) betaList[[j]]<-betafdPar
+
+for (j in 1:p)
+  betaList[[j]]$lambda<-10^4
+
+fRegressList<-fRegress(Imped44fd,TreatmentsList,betaList)
+
+betaestList<-fRegressList$betaestlist
+treatmentsFit<-fRegressList$yhatfdobj
+treatments<-c("Mean","A","B","A+B")
+par(mfrow=c(2,3),cex=1)
+for (j in 1:p) plot(betaestList[[j]]$fd,lwd=2,main=treatments[j])
+
+plot(treatmentsFit,lwd=2,col=1,lty=1,main="Prediction")
+
 
 
 
