@@ -2,6 +2,8 @@ setwd("C:/Users/nb2/Desktop/Politecnico/StatApp/AppStatProject")
 library(tidyverse)
 library(reshape2)
 library(magrittr)
+library(lme4)
+library(fda)
 
 # Importo i dati e li pulisco
 # Nota: per vedere meglio cosa succede, usate il comando head() dopo ogni passaggio
@@ -450,17 +452,22 @@ scores.pca2<-imped.pca$scores[,2]
 processed_lme<-processed_nomissing%>%spread(key=Time,value=Impedance)%>%select((1:4))%>%arrange(desc(treatGF),desc(Inhibitor))
 processed_lme[5:43,]<-arrange(processed_lme[5:43,],Inhibitor,desc(Concentration))
 processed_lme[17:40,]<-arrange(processed_lme[17:40,],desc(Inhibitor))
-processed_lme<-processed_lme%>%mutate(Scores=scores.pca1,Scores2=scores.pca2)%>%filter(Inhibitor!="no")%>%select(-treatGF)
+processed_lme<-processed_lme%>%mutate(Scores=scores.pca1,Scores2=scores.pca2)%>%select(-treatGF)
+temprow<-processed_lme[43,4:5]
+processed_lme[17:43,4:5]<-processed_lme[16:42,4:5]
+processed_lme[16,4:5]<-temprow
+processed_lme<-processed_lme%>%filter(Inhibitor!="no",Inhibitor!="untreated")
 processed_lme$Concentration<-plyr::revalue(processed_lme$Concentration, c(C0="0",C006="0.06",C025="0.25",C1="1",C4="4"))%>%as.character()%>%as.numeric()
 processed_lme$Concentration<-log(processed_lme$Concentration)
 # processed_lme<-processed_lme%>%mutate(ID=c(1,1,1,2,2,2,3,3,3,4,4,5,5,5,6,6,6,7,7,7,8,8,8,9,9,9,10,10,10,11,11,11,12,12,12))
 
-basemodel<-lmer(Scores~1+poly(Concentration,2)*Inhibitor+(1+poly(Concentration,2)|Measure),data=processed_lme,REML=F)
+basemodel<-lmer(Scores~1+poly(Concentration,2)*Inhibitor+(1|Measure),data=processed_lme,REML=F)
 
 ggplot(processed_lme, aes(Concentration, Scores, color=Inhibitor)) +
   stat_summary(aes(y=fitted(basemodel)), fun.y=mean, geom="line")+
   geom_point(aes(x=Concentration,y=Scores))+theme_minimal()
 
+shapiro.test(residuals(basemodel))
 
 plot(basemodel)
 plot(basemodel, type = c("p", "smooth"))
@@ -482,13 +489,16 @@ qqmath(basemodel2,id=.05)
 mean_curve<-mean(result$yhatfd)
 
 load("myFunction.Rdata")
-d_p<-downscale_processed(processed_nomissing,"A",c(.125,.5,2),basemodel,basemodel2,mean_curve,imped.pca)
+d_p<-downscale_processed(processed_nomissing,"A+B",c(.125,.5,2),basemodel,basemodel2,mean_curve,imped.pca)
 
 lookUp2<-data.frame(Concentration=c(unique(d_p$Concentration)),Estimated=c(rep("FALSE",4),rep("TRUE",3)))
 d_plot<-inner_join(d_p,lookUp2,by="Concentration")
 
 ggplot(d_plot,aes(x=Time,y=Impedance,color=Concentration%>%as.factor(),group=Concentration))+geom_line(aes(linetype=Estimated))+theme_minimal()+guides(linetype=FALSE)+scale_color_discrete(name="Concentration")
 
+# Grafico dato mancante
+pmissing<-ggplot(processed_nomissing%>%filter(Inhibitor=="A",Concentration=="C006")%>%mutate(Estimated=Measure==3),aes(x=Time,y=Impedance,group=interaction(Inhibitor,Concentration,Measure)))+guides(Color="none")
+pmissing+geom_line(aes(linetype=Estimated,color=Measure))+theme_minimal()
 # Prova di FLM
 levels(processed_nomissing$Inhibitor)<-c(levels(processed_nomissing$Inhibitor),"untreated")
 processed_nomissing[processed_nomissing$treatGF==F,]$Inhibitor<-"untreated"
@@ -519,17 +529,24 @@ fRegressList<-fRegress(Imped44fd,TreatmentsList,betaList)
 
 betaestList<-fRegressList$betaestlist
 treatmentsFit<-fRegressList$yhatfdobj
-treatments<-c("Mean",Treatments)
+treatments<-c("Mean","GF","A","B","A+B","untreated")
 par(mfrow=c(2,3),cex=1)
 for (j in 1:p) plot(betaestList[[j]]$fd,lwd=2,main=treatments[j])
 plot(treatmentsFit,lwd=2,col=1,lty=1)
 plot(betaestList[[1]])
-plot(betaestList[[1]]$fd+betaestList[[2]]$fd)
-plot(betaestList[[1]]$fd+betaestList[[3]]$fd)
-plot(betaestList[[1]]$fd+betaestList[[4]]$fd)
-plot(betaestList[[1]]$fd+betaestList[[5]]$fd)
-plot(betaestList[[1]]$fd+betaestList[[6]]$fd)
+plot(betaestList[[1]]$fd+betaestList[[2]]$fd,ylim=c(0,2.5))
+plot(betaestList[[1]]$fd+betaestList[[3]]$fd,ylim=c(0,2.5))
+plot(betaestList[[1]]$fd+betaestList[[4]]$fd,ylim=c(0,2.5))
+plot(betaestList[[1]]$fd+betaestList[[5]]$fd,ylim=c(0,2.5))
+plot(betaestList[[1]]$fd+betaestList[[6]]$fd,ylim=c(0,2.5))
 
+fittedval_flm<-NULL
+for(j in 2:6)
+  fittedval_flm<-c(fittedval_flm,eval.fd(betaestList[[1]]$fd+betaestList[[j]]$fd,mytimes))
+
+plot_flm<-data.frame(Treatment=rep(treatments[-1],each=111),Time=rep(mytimes,5),Impedance=fittedval_flm)
+myplot<-ggplot(plot_flm,aes(x=Time,y=Impedance))
+myplot+geom_line(size=.75,aes(color=Treatment))+theme_minimal()
 
 yhatmat  <- predict(fRegressList$yhatfdobj,mytimes)
 ymat     <- eval.fd(mytimes,Imped44fd)
@@ -547,10 +564,10 @@ plot(mytimes, stddevE, type="l",
 
 #  Repeat regression, this time outputting results for
 #  confidence intervals
-imped_basis_mat<-eval.basis(mytimes,imped_basis)
-y2cMap <- solve(tcrossprod(imped_basis_mat, imped_basis_mat))
+ciao<-smooth.basis(mytimes,imped_data,imped_par)
 
-stderrList <- fRegress.stderr(fRegressList, y2cMap, SigmaE)
+
+stderrList <- fRegress.stderr(fRegressList, ciao$y2cMap, SigmaE)
 
 betastderrlist <- stderrList$betastderrlist
 
@@ -558,27 +575,40 @@ betastderrlist <- stderrList$betastderrlist
 
 op <- par(mfrow=c(2,3), pty="s")
 for (j in 1:p) {
-  betastderrj <- eval.fd(day.5, betastderrlist[[j]])
-  plot(day.5, betastderrj,
+  betastderrj <- eval.fd(mytimes, betastderrlist[[j]])
+  plot(mytimes, betastderrj,
        type="l",lty=1, xlab="Day", ylab="Reg. Coeff.",
-       main=zonenames[j])
+       main=treatments[j])
 }
 par(op)
 
 #  plot regression functions with confidence limits
 
-op <- par(mfrow=c(3,2))
+op <- par(mfrow=c(2,3))
 for (j in 1:p) {
-  betafdParj  <- betaestlist[[j]]
+  betafdParj  <- betaestList[[j]]
   betafdj     <- betafdParj$fd
-  betaj       <- eval.fd(day.5, betafdj)
-  betastderrj <- eval.fd(day.5, betastderrlist[[j]])
-  matplot(day.5, cbind(betaj, betaj+2*betastderrj, betaj-2*betastderrj),
+  betaj       <- eval.fd(mytimes, betafdj)
+  betastderrj <- eval.fd(mytimes, betastderrlist[[j]])
+  matplot(mytimes, cbind(betaj, betaj+2*betastderrj, betaj-2*betastderrj),
           type="l",lty=c(1,4,4), xlab="Day", ylab="Reg. Coeff.",
-          main=zonenames[j])
+          main=treatments[j])
 }
 par(op)
 
+# Test
+F.res = myFperm.fd(Imped44fd, TreatmentsList, betaList,cex.axis=1.5,cex.lab=1.5)
+
+t.res = mytperm.fd(Imped44fd[5:16],Imped44fd[17:28],nperm=1000)
+t.res = mytperm.fd(Imped44fd[5:16],Imped44fd[29:40],nperm=1000)
+t.res = mytperm.fd(Imped44fd[17:28],Imped44fd[29:40],nperm=1000)
+
+myplot<-ggplot(plot_flm%>%filter(Treatment %in% c("A","B")),aes(x=Time,y=Impedance))
+myplot+geom_line(size=.75,aes(color=Treatment))+theme_minimal()+scale_color_discrete(h=c(0,240))
+myplot<-ggplot(plot_flm%>%filter(Treatment %in% c("A","A+B")),aes(x=Time,y=Impedance))
+myplot+geom_line(size=.75,aes(color=Treatment))+theme_minimal()+scale_color_discrete(h=c(0,120))
+myplot<-ggplot(plot_flm%>%filter(Treatment %in% c("B","A+B")),aes(x=Time,y=Impedance))
+myplot+geom_line(size=.75,aes(color=Treatment))+theme_minimal()+scale_color_discrete(h=c(120,240))
 
 # Proviamo a normalizzare
 processed_norm<-processed_nomissing%>%group_by(Time)%>%mutate(base=mean(Impedance[treatGF==F]),baseGF=mean(Impedance[treatGF==T & Inhibitor=="no"]))%>%
@@ -621,6 +651,194 @@ for (j in 1:p) plot(betaestList[[j]]$fd,lwd=2,main=treatments[j])
 plot(treatmentsFit,lwd=2,col=1,lty=1,main="Prediction")
 
 
+mytperm.fd <- function(x1fd,x2fd,nperm=200,q=0.05,argvals=NULL,plotres=TRUE,...) # first and second 
+{                                                                          # groups of data,
+  if( !is.fd(x1fd) | !is.fd(x2fd) ){                                     # number permuts
+    stop("x1fd and x2fd must both be functional data objects")         # quantile
+  }                                                                      # where to evaluate
+  # do I plot
+  rangeobs = x1fd$basis$range
+  rangehat = x2fd$basis$range
+  
+  
+  if( !prod(rangeobs == rangehat) ){
+    stop("x1fd and x2fd do not have the same range.")
+  }
+  
+  if(is.null(argvals)){
+    argvals = seq(rangeobs[1],rangeobs[2],length.out=101)
+  }
+  
+  q = 1-q
+  
+  x1mat = eval.fd(argvals,x1fd)
+  x2mat = eval.fd(argvals,x2fd)
+  
+  n1 = ncol(x1mat)
+  n2 = ncol(x2mat)
+  
+  Xmat = cbind(x1mat,x2mat)
+  
+  Tnull = rep(0,nperm)
+  
+  Tnullvals = matrix(0,length(argvals),nperm)
+  
+  for(i in 1:nperm){
+    tXmat = Xmat[,sample(n1+n2)]
+    
+    tmean1 = apply(tXmat[,1:n1],1,mean)
+    tmean2 = apply(tXmat[,n1+(1:n2)],1,mean)
+    
+    tvar1 = apply(tXmat[,1:n1],1,var)/n1
+    tvar2 = apply(tXmat[,n1+(1:n2)],1,var)/n2
+    
+    Tnullvals[,i] = abs(tmean1-tmean2)/sqrt(tvar1+tvar2)
+    Tnull[i] = max(Tnullvals[,i])
+  }
+  
+  mean1 = apply(Xmat[,1:n1],1,mean)
+  mean2 = apply(Xmat[,n1+(1:n2)],1,mean)
+  
+  var1 = apply(Xmat[,1:n1],1,var)/n1
+  var2 = apply(Xmat[,n1+(1:n2)],1,var)/n2
+  
+  Tvals = abs(mean1-mean2)/sqrt(var1+var2)
+  Tobs = max(Tvals)
+  
+  pval = mean( Tobs < Tnull )
+  qval = quantile(Tnull,q)
+  
+  pvals.pts = apply(Tvals<Tnullvals,1,mean)
+  qvals.pts = apply(Tnullvals,1,quantile,q)
+  
+  if(plotres){
+    
+    if( is.null(names(x1fd$fdnames)) | is.null(names(x2fd$fdnames)) ){
+      xlab='argvals'
+    }	
+    else if( prod(names(x1fd$fdnames)[1] == names(x2fd$fdnames)[1]) ){
+      xlab = names(x1fd$fdnames)[1]
+    }
+    else{ xlab = 'argvals' }
+    
+    ylims = c( min(Tvals,qvals.pts),max(Tobs,qval))
+    
+    plot(argvals,Tvals,type='l',col=2,ylim=ylims,lwd=2,
+         xlab=xlab,ylab='t-statistic',...)
+    lines(argvals,qvals.pts,lty=3,col=4,lwd=2)
+    abline(h=qval,lty=2,col=4,lwd=2)
+    
+    legendstr = c('Observed Statistic',
+                  paste('pointwise',1-q,'critical value'),
+                  paste('maximum',1-q,'critical value'))
 
+    legend("bottomright",legend=legendstr,col=c(2,4,4),
+           lty=c(1,3,2),lwd=c(2,2,2))
+  }
+  
+  
+  return( list(pval=pval,qval=qval,Tobs=Tobs,Tnull=Tnull,
+               Tvals=Tvals,Tnullvals=Tnullvals,qvals.pts=qvals.pts,
+               pvals.pts=pvals.pts,argvals=argvals) )
+}
 
+myFperm.fd <- function(yfdPar, xfdlist, betalist, wt=NULL,
+                     nperm=200,argvals=NULL,q=0.05,plotres=TRUE,...)
+{
+  # yfdpar, xfdList, betalist, wt = standard inputs to fRegress
+  # nperm = number of permutations,
+  # argvals = where to evaluate functional responses,
+  # q =  quantile to compare
+  # plotres:  Do we plot the results?
+  
+  Fnull     = rep(0,nperm)
+  Fnullvals = c()
+  
+  q = 1-q
+  
+  begin <- proc.time()
+  fRegressList <- fRegress(yfdPar, xfdlist, betalist)
+  elapsed.time <- max(proc.time()-begin,na.rm=TRUE)
+  
+  if( elapsed.time > 30/nperm ){
+    print(paste('Estimated Computing time =',
+                round(nperm*elapsed.time),'seconds.'))
+  }
+  
+  yhat <- fRegressList$yhatfdobj
+  if(is.list(yhat) && ('fd' %in% names(yhat))) yhat <- yhat$fd
+  
+  tFstat <- Fstat.fd(yfdPar,yhat,argvals)
+  
+  Fvals <- tFstat$F
+  Fobs = max(Fvals)
+  
+  argvals = tFstat$argvals
+  
+  if(is.vector(yfdPar)){ 
+    n = length(yfdPar) 
+  }  else { 
+    n = ncol(yfdPar$coefs) 
+  }
+  
+  for(i in 1:nperm){
+    
+    tyfdPar = yfdPar[sample(n)]
+    
+    fRegressList <- fRegress(tyfdPar, xfdlist, betalist)
+    
+    yhat <- fRegressList$yhatfdobj
+    if(is.list(yhat) && ('fd' %in% names(yhat))) yhat <- yhat$fd
+    
+    tFstat = Fstat.fd(tyfdPar,yhat,argvals)
+    
+    Fnullvals <- cbind(Fnullvals,tFstat$F)
+    
+    Fnull[i] = max(Fnullvals[,i])
+  }
+  
+  pval = mean( Fobs < Fnull )
+  qval = quantile(Fnull,q)
+  
+  pvals.pts = apply(Fvals<Fnullvals,1,mean)
+  qvals.pts = apply(Fnullvals,1,quantile,q)
+  
+  if(plotres){
+    if(is.fd(yfdPar)){
+      ylims = c(min(c(Fvals,qval,qvals.pts)),max(c(Fobs,qval)))
+      
+      if( is.null(names(yhat$fdnames)) ){ xlab = 'argvals' }
+      else{ xlab = names(yhat$fdnames)[1] }
+      
+      plot(argvals,Fvals,type="l",ylim=ylims,col=2,lwd=2,
+           xlab=xlab,ylab='F-statistic',main='Permutation F-Test',...)
+      lines(argvals,qvals.pts,lty=3,col=4,lwd=2)
+      abline(h=qval,lty=2,col=4,lwd=2)
+      
+      legendstr = c('Observed Statistic',
+                    paste('pointwise',1-q,'critical value'),
+                    paste('maximum',1-q,'critical value'))
+      
+      legend("bottomright",legend=legendstr,col=c(2,4,4),
+             lty=c(1,3,2),lwd=c(2,2,2))
+    }
+    else{
+      xlims = c(min(c(Fnull,Fobs)),max(c(Fnull,Fobs)))
+      hstat = hist(Fnull,xlim=xlims,lwd=2,xlab='F-value',
+                   main = 'Permutation F-Test')
+      abline(v = Fobs,col=2,lwd=2)
+      abline(v = qval,col=4,lty=2,lwd=2)
+      
+      legendstr = c('Observed Statistic',
+                    paste('Permutation',1-q,'critical value'))
+      
+      legend("bottomright",legend=legendstr,col=c(2,4),
+             lty=c(1,2),lwd=c(2,2))
+    }
+  }
+  
+  return(list(pval=pval,qval=qval,Fobs=Fobs,Fnull=Fnull,
+              Fvals=Fvals,Fnullvals=Fnullvals,pvals.pts=pvals.pts,qvals.pts=qvals.pts,
+              fRegressList=fRegressList,argvals=argvals))
+}
 
